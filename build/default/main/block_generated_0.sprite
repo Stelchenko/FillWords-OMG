@@ -1,0 +1,4 @@
+tile_set: "/assets/bricks.atlas"
+default_animation: "yellow"
+material: "/builtins/materials/sprite.material"
+blend_mode: BLEND_MODE_ADD
