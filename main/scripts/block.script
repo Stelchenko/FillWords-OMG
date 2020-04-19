@@ -1,0 +1,30 @@
+local normal_scale = 1		-- The normal size
+local zoomed_scale = 0.6		-- When interacted with, zoom to this
+
+function init(self)
+	self.rot = go.get_rotation()
+	go.set_scale(normal_scale)
+	
+end
+
+function on_message(self, message_id, message, sender)
+	if message_id == hash("zoom_and_wobble") then
+		go.animate(".", "scale", go.PLAYBACK_ONCE_FORWARD, zoomed_scale, go.EASING_INOUTSINE, 0.1)
+		local rot = go.get(".", "euler.z")
+		local r = math.random() / 50
+		go.cancel_animations(".", "euler.z")
+		go.animate(".", "euler.z", go.PLAYBACK_LOOP_PINGPONG, rot - 4, go.EASING_INOUTSINE, 0.1 + r, 0.1)
+		labelValue = label.get_text("#label")
+		msg.post("board#board", "add_letter", {letter = labelValue})
+	elseif message_id == hash("reset") then
+		go.cancel_animations(".", "scale")
+		go.animate(".", "scale", go.PLAYBACK_ONCE_FORWARD, normal_scale, go.EASING_INOUTSINE, 0.1)
+		go.cancel_animations(".", "euler.z")
+		go.set_rotation(self.rot)
+		msg.post("#", "sway")
+	elseif message_id == hash("change_label") then
+		label.set_text("#label", message.text)
+	elseif message_id == hash("change_color") then
+		msg.post("#sprite", "play_animation", {id = hash("red")})
+	end
+end

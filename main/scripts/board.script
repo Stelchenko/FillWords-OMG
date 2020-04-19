@@ -1,0 +1,183 @@
+local blocksize = 110	-- Distance between block centers
+local size				-- Number of columns
+local edge				-- Left and right edge.
+local bottom_edge		-- Bottom edge.
+
+local level -- Curent level
+local isCompleted = false
+local letters = {}
+local words = {}
+local isExist = false
+local word = ""
+local count_of_words
+
+--
+--Reads a level from a file
+--
+local function read_level()
+	local res = sys.load_resource("/assets/resources/level"..level..".txt")
+	if res then
+		local i = 0
+		local j = 0
+		local g = 0
+		for s in string.gmatch(res, "%d+") do
+			if i == 0 then
+				size = tonumber(s)
+			else
+				count_of_words = tonumber(s)
+			end
+			i = i + 1
+		end
+		i = 0
+		for s in string.gmatch(res, "%S+") do
+			if i > 1  and i < 1 + count_of_words + 1 then
+				words[j] = s
+				j = j + 1
+			end
+			if i > 1 + count_of_words then
+				letters[g] = s
+				g = g + 1
+			end 
+
+			i = i + 1
+		end
+	end 
+end
+
+--
+--Add blocks to the link
+--
+local function add_to_link(self, x, y)
+	-- outside board or empty
+	if x < 0 or x >= size or y < 0 or y >= size or self.board[x][y] == nil then
+		return
+	end
+	
+	local slot = self.board[x][y]
+	
+	if #self.link == 0 then
+		msg.post(slot.id, "zoom_and_wobble")
+		table.insert(self.link, slot)
+		return
+	end
+
+	local last = self.link[#self.link]
+	local previous = self.link[#self.link - 1]
+	local distance = math.max(math.abs(last.x - x), math.abs(last.y - y))
+	-- don't add the same slot more than once and don't add slots that are too far away
+	if distance ~= 1 then
+		return
+	end
+	-- going back to the previous link
+	-- remove the last slot of the link
+	if previous == slot then
+		self.link[#self.link] = nil
+		msg.post(last.id, "reset")
+		word = word:sub(1, #word - 2)
+		return
+	end
+	-- don't try to add the same slot twice
+	for i=1,#self.link do
+		if self.link[i] == slot then
+			return
+		end
+	end	
+	-- the new slot is ok, add it
+	msg.post(slot.id, "zoom_and_wobble")
+	table.insert(self.link, slot)
+end
+
+local function change_color_blocks(board, blocks)
+	for _,block in pairs(blocks) do
+		msg.post(block.id, "change_color")
+		board[block.x][block.y] = nil
+	end
+end
+
+local function remove_link(board, link, callback)	
+	for _,slot in pairs(link) do
+		msg.post(slot.id, "reset")
+	end
+	for _,w in pairs(words) do
+		if word == w then
+			isExist = true
+		end
+	end
+	if not isExist then
+		word = ""
+		callback()
+		return
+	end
+	change_color_blocks(board, link)
+	count_of_words = count_of_words - 1
+	word = ""
+	isExist = false
+	callback()
+end
+--
+--Build 2d board of blocks
+--
+local function build_board()
+	local board = {}
+	local pos = vmath.vector3()
+	local x = 0
+	local y = 0
+	local i = 0
+	for x = 0,size-1 do
+		pos.x = edge + blocksize / 2 + blocksize * x
+		board[x] = {}
+		for y = 0,size-1 do
+			pos.y = bottom_edge + blocksize / 2 + blocksize * y
+			local type = type_plain
+			local id = factory.create("#block_factory", pos, null)
+			msg.post(id, "change_label", { text = letters[i]} )
+			board[x][y] = { id = id, x = x, y = y}
+			i = i+1
+		end
+	end	
+	return board
+end
+
+function init(self)
+	self.board = {}
+	self.link = {}
+	isCompleted = false
+	msg.post(".", "acquire_input_focus")
+end
+
+function update(self, dt)
+	if count_of_words == 0 then
+		if not isCompleted then
+			msg.post("level"..level..":/board#level", "level_completed") 
+			isCompleted = true
+		end
+	end
+end
+
+function on_input(self, action_id, action)
+	if action_id == hash("touch") or self.linking then
+		local x = math.floor((action.x - edge) / blocksize)
+		local y = math.floor((action.y - bottom_edge) / blocksize)
+		add_to_link(self, x, y)
+		if action.pressed then
+			self.linking = true
+		elseif action.released then
+			remove_link(self.board, self.link, function()
+				self.linking = false
+				self.link = {}
+			end)
+		end
+	end
+end
+
+function on_message(self, message_id, message, sender)
+	if message_id == hash("add_letter") then
+		word = word..message.letter
+	elseif message_id == hash("change_level") then
+		level = message.level
+		read_level()
+		edge = (640 - size * blocksize)/2
+		bottom_edge = (1136 - size * blocksize)/2
+		self.board = build_board();
+	end
+end
